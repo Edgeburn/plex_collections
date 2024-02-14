@@ -1,4 +1,4 @@
-#  Copyright (c) 2023 Edgeburn Media. All rights reserved.
+#  Copyright (c) 2023-2024 Edgeburn Media. All rights reserved.
 import os
 from typing import List
 
@@ -29,7 +29,15 @@ def get_tmdb_id(movie) -> str:
     :param movie: Movie to get TMDB id for
     :return: TMDB id for the given movie
     """
+
+    if movie is None:
+        raise RuntimeError(f"Movie is None")
+
     guids: List[Guid] = movie.guids
+    if len(guids) == 0 and movie.title is not None:
+        raise Exception(f'No GUIDs found for "{movie.title}"')
+    elif movie.title is None or len(movie.title) == 0:
+        raise Exception(f"No movie title found for a given movie")
     for guid in guids:
         if guid.id.startswith("tmdb://"):
             return guid.id.split("tmdb://")[1]
@@ -50,13 +58,20 @@ def get_plex_movie_from_tmdb_movie(library: LibrarySection, movie) -> Movie:
 
 
 def get_plex_movies_from_tmdb_collection(
-    library: LibrarySection, collection
+    library: LibrarySection, tmdbCollection
 ) -> List[Movie]:
     movies: List[Movie] = []
-    parts = collection.parts
+    parts = tmdbCollection.parts
     for part in parts:
         movie = get_plex_movie_from_tmdb_movie(library, part)
         movies.append(movie)
+
+    logger.debug(
+        'Got {} movies in collection "{}" in library "{}"',
+        len(movies),
+        tmdbCollection.name,
+        library.title,
+    )
 
     return movies
 
@@ -67,6 +82,9 @@ def get_tmdb_collection_for_movie(movie):
     logger.debug('Got TMDB ID {} for movie "{}"', tmdb_id, movie.title)
     tmdb_movie = tmdb.Movies(tmdb_id)
     tmdb_movie.info()  # make request to the TMDB api
+    if tmdb_movie.belongs_to_collection is None:
+        logger.debug('Movie "{}" is in no collection', movie.title)
+        return None
     movie_collection_id = tmdb_movie.belongs_to_collection["id"]
     logger.debug("Acquired collection ID {}", movie_collection_id)
     # Now retrieve the collection
@@ -76,8 +94,10 @@ def get_tmdb_collection_for_movie(movie):
 
 
 if __name__ == "__main__":
+    # _sample_debug()
     movie_library: LibrarySection = plex.library.section("Movies")
     movies: List[Movie] = movie_library.search("Back to the Future")
+    movie_library.createCollection()
     if len(movies) == 0:
         raise Exception("No movies found")
     movie = movies[0]
